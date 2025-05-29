@@ -1,10 +1,10 @@
 import numpy as np
 import torch
 import os
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader, random_split
-from sklearn.metrics import confusion_matrix, accuracy_score
+#from sklearn.metrics import confusion_matrix, accuracy_score
 
 '''
 The dataset chosen is not divided nicely into sets for us
