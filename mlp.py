@@ -54,8 +54,8 @@ print(f"{train_total} : {test_total} : {valid_total}")
 train_split, test_split, validation_split = random_split(entire_set, [train_total, test_total, valid_total])
 
 train_data= DataLoader(train_split, batch_size=batch_size, shuffle=True)
-test_set = DataLoader(test_split, batch_size=batch_size)
-validation_set = DataLoader(validation_split, batch_size=batch_size)
+test_set = DataLoader(test_split, batch_size=batch_size, shuffle=False)
+validation_set = DataLoader(validation_split, batch_size=batch_size, shuffle=False)
 
 print(f"Respective Sizes:Train-Test-Validation x32 for batch: {len(train_data)}, {len(test_set)}, {len(validation_set)}")
 
