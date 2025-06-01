@@ -61,9 +61,7 @@ print(f"Respective Sizes:Train-Test-Validation x32 for batch: {len(train_data)},
 
 #helper relu function
 def reLU(x):
-    #maybe should use leaky instead? 
-    #Gives more wiggle between nothing and everything
-    pass
+    return torch.max(x,torch.tensor(0.0,device=device))
 
 
 class Model():
@@ -91,6 +89,15 @@ class Model():
         self.ol_b_m = torch.zeros_like(self.ol_b).to(device)
         self.hl_w_m = torch.zeros_like(self.hl_w).to(device)
         self.hl_b_m = torch.zeros_like(self.hl_b).to(device)
+    
+    def forward(self, x):
+        x = x.view(x.shape[0],-1).to(device)
+        hidden = reLU(x @ self.hl_w.T + self.hl_b)
+        output = hidden @ self.ol_w.T + self.ol_b
+        return output, hidden
+    
+    def backward(self,x, y, output, hidden):
+        
 
 #test model to verify build
 model = Model()
