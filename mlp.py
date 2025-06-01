@@ -112,8 +112,35 @@ class Model():
         output = hidden @ self.ol_w.T + self.ol_b # calculate output
         return output, hidden
     
-    def backward(self,x, y, output, hidden):
+    def backward(self, y_true, lr=0.08, momentum=0.05):
+        # true label
+        y_true = one_hot(y_true,num_classes=4)
+
+        # output error
+        error_output = self.output - y_true
         
+        # Gradients for output weights and biases
+        grad_ol_w = error_output.T @ self.hidden / self.x.shape[0]
+        grad_ol_b = error_output.mean(dim=0, keepdim=True)
+
+        # Backpropagate error to hidden layer
+        d_hidden = error_output @ self.ol_w
+        d_hidden[self.hidden <= 0] = 0  # Derivative of ReLU
+
+        # Gradients for hidden weights and biases
+        grad_hl_w = d_hidden.T @ self.x / self.x.shape[0]
+        grad_hl_b = d_hidden.mean(dim=0, keepdim=True)
+
+          # Update with momentum
+        self.ol_w_m = momentum * self.ol_w_m - lr * grad_ol_w
+        self.ol_b_m = momentum * self.ol_b_m - lr * grad_ol_b
+        self.hl_w_m = momentum * self.hl_w_m - lr * grad_hl_w
+        self.hl_b_m = momentum * self.hl_b_m - lr * grad_hl_b
+
+        self.ol_w += self.ol_w_m
+        self.ol_b += self.ol_b_m
+        self.hl_w += self.hl_w_m
+        self.hl_b += self.hl_b_m
 
 #test model to verify build
 model = Model()
