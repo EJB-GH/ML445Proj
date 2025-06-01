@@ -59,10 +59,25 @@ validation_set = DataLoader(validation_split, batch_size=batch_size)
 
 print(f"Respective Sizes:Train-Test-Validation x32 for batch: {len(train_data)}, {len(test_set)}, {len(validation_set)}")
 
-#helper relu function
+#helper relu function 
 def reLU(x):
     return torch.max(x,torch.tensor(0.0,device=device))
 
+def softmax(x):
+    e_x = torch.exp(x - x.max(dim=1, keepdim=True).values)
+    return e_x / e_x.sum(dim=1, keepdim=True)
+
+# Manual one-hot encoder
+def one_hot(labels, num_classes):
+    one_hot_labels = torch.zeros(labels.size(0), num_classes, device=labels.device)
+    one_hot_labels[torch.arange(labels.size(0)), labels] = 1.0
+    return one_hot_labels
+
+# Manual cross-entropy loss
+def cross_entropy(pred, target):
+    eps = 1e-9
+    pred = torch.clamp(pred, eps, 1. - eps)
+    return -torch.sum(target * torch.log(pred)) / pred.shape[0]
 
 class Model():
     def __init__(self):
@@ -90,10 +105,11 @@ class Model():
         self.hl_w_m = torch.zeros_like(self.hl_w).to(device)
         self.hl_b_m = torch.zeros_like(self.hl_b).to(device)
     
+    # forward pass function
     def forward(self, x):
-        x = x.view(x.shape[0],-1).to(device)
-        hidden = reLU(x @ self.hl_w.T + self.hl_b)
-        output = hidden @ self.ol_w.T + self.ol_b
+        x = x.view(x.shape[0],-1).to(device) #reshape to 1D and send to GPU
+        hidden = reLU(x @ self.hl_w.T + self.hl_b) #send to activation
+        output = hidden @ self.ol_w.T + self.ol_b # calculate output
         return output, hidden
     
     def backward(self,x, y, output, hidden):
