@@ -1,100 +1,120 @@
-import numpy as np
 import torch
-import os
-import matplotlib.pyplot as plt
+import torch.nn.functional as F
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader, random_split
-from sklearn.metrics import confusion_matrix, accuracy_score
 
-'''
-The dataset chosen is not divided nicely into sets for us
-so I have to manually divide the sets up with ratios
-the files themselves are 176x208 jpegs. I'd like to experiment
-and leave then in their original ratio for now
+# Set device
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-The total size of the dataset is 6400 images.
-[EB]
-'''
-device = torch.device('cuda')
-torch.cuda.is_available()
-
-#creating ratios for the division of the dataset
-train_size, test_size, valid_size = 0.7, 0.15, 0.15
-
-#batching will save us some time for computation
-batch_size = 32
-
-#training variables, subject to change based on results
-epochs = None
-lr = .08
-momentum = .05
-
-#ensure your path for this variable is the same as mine otherwise this wont work
+# Load dataset
 path = 'Alzheimer_MRI_4_classes_dataset'
+dataset = datasets.ImageFolder(root=path, transform=transforms.ToTensor())
 
-entire_set = datasets.ImageFolder(
-    root=path,
-    transform=transforms.ToTensor(),
-)
+# Split dataset into train, test, and validation
+train_size = int(0.7 * len(dataset))
+test_size = int(0.15 * len(dataset))
+valid_size = len(dataset) - train_size - test_size
+train_set, test_set, val_set = random_split(dataset, [train_size, test_size, valid_size])
 
-#some diagnostic print outs to make sure youre loaded correctly
-print(f"Total size of data loaded: {len(entire_set)}")
-print(f"Classes found by ImageFolder call: {entire_set.classes}")
-print(f"Classes in index: {entire_set.class_to_idx}")
+# Dataloaders
+batch_size = 32
+train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True)
+test_loader = DataLoader(test_set, batch_size=batch_size)
+val_loader = DataLoader(val_set, batch_size=batch_size)
 
-#need to splice up the entire_set variable to these 3 sets
-train_total = int(6400 * train_size)
-test_total = int(6400 * test_size)
-valid_total = 6400 - (train_total + test_total)
-
-#diagnostic for the splicing math
-print(f"{train_total} : {test_total} : {valid_total}")
-
-#now divide the data using random_split
-train_split, test_split, validation_split = random_split(entire_set, [train_total, test_total, valid_total])
-
-train_data= DataLoader(train_split, batch_size=batch_size, shuffle=True)
-test_set = DataLoader(test_split, batch_size=batch_size, shuffle=False)
-validation_set = DataLoader(validation_split, batch_size=batch_size, shuffle=False)
-
-print(f"Respective Sizes:Train-Test-Validation x32 for batch: {len(train_data)}, {len(test_set)}, {len(validation_set)}")
-
-#helper relu function
+# ReLU function
 def reLU(x):
-    #maybe should use leaky instead? 
-    #Gives more wiggle between nothing and everything
-    pass
+    # Applies ReLU element-wise (replaces negative values with 0)
+    return torch.maximum(x, torch.tensor(0.0, device=device))
 
+# Softmax function
+def softmax(x):
+    # Applies softmax to each row (each sample in the batch)
+    e_x = torch.exp(x - x.max(dim=1, keepdim=True).values)
+    return e_x / e_x.sum(dim=1, keepdim=True)
 
-class Model():
-    def __init__(self):
+# Cross-entropy loss (expects one-hot targets)
+def cross_entropy(pred, target):
+    eps = 1e-9  # avoid log(0)
+    pred = torch.clamp(pred, eps, 1. - eps)
+    return -torch.sum(target * torch.log(pred)) / pred.shape[0]
 
-        #layer variables
-        self.input_size = 36608 #176x208 much more complex than mnist so hidden is larger
-        self.hidden_size = 256 #chosen randomly for the first test
-        self.output_size = 4 #based on the classes available
+# Define the manual MLP
+class MLP:
+    def __init__(self, input_size, hidden_size, output_size):
+        # Initialize weights and biases
+        self.hl_w = torch.empty(hidden_size, input_size, device=device).uniform_(-0.05, 0.05)
+        self.hl_b = torch.zeros(1, hidden_size, device=device)
+        self.ol_w = torch.empty(output_size, hidden_size, device=device).uniform_(-0.05, 0.05)
+        self.ol_b = torch.zeros(1, output_size, device=device)
 
-        #layers themselves
-        self.hl_w = torch.empty(self.hidden_size, self.input_size).to(device) #[256,36608]
-        self.hl_b = torch.empty(1, self.hidden_size).to(device) #wanted to try 0 init vs the 1 we've used
-        self.ol_w = torch.empty(self.output_size, self.hidden_size).to(device) #[4,256]
-        self.ol_b = torch.empty(1, self.output_size).to(device)
+        # Momentum buffers
+        self.hl_w_m = torch.zeros_like(self.hl_w)
+        self.hl_b_m = torch.zeros_like(self.hl_b)
+        self.ol_w_m = torch.zeros_like(self.ol_w)
+        self.ol_b_m = torch.zeros_like(self.ol_b)
 
-        #doing initializations for the starting values
-        torch.nn.init.uniform_(self.hl_w, -0.05, 0.05)  
-        torch.nn.init.zeros_(self.hl_b)
-        torch.nn.init.uniform_(self.ol_w, -0.05, 0.05)       
-        torch.nn.init.zeros_(self.ol_b)
+    def forward(self, x):
+        # Flatten the images
+        x = x.view(x.shape[0], -1).to(device)
+        self.x = x  # Store input for backprop
 
-        #needed to create var to store the previous momentum updates
-        self.ol_w_m = torch.zeros_like(self.ol_w).to(device)
-        self.ol_b_m = torch.zeros_like(self.ol_b).to(device)
-        self.hl_w_m = torch.zeros_like(self.hl_w).to(device)
-        self.hl_b_m = torch.zeros_like(self.hl_b).to(device)
+        # Hidden layer (ReLU activation)
+        self.hidden = reLU(x @ self.hl_w.T + self.hl_b)
 
-#test model to verify build
-model = Model()
+        # Output layer (softmax for class probabilities)
+        logits = self.hidden @ self.ol_w.T + self.ol_b
+        self.output = softmax(logits)
+        return self.output
 
-print(f"Hidden Layer Shape: {model.hl_w.shape}")
-print(f"Output Layer Shape: {model.ol_w.shape}")
-print(f"Bias Setting: {model.ol_b}")
+    def backward(self, y_true, lr=0.08, momentum=0.05):
+        # Convert labels to one-hot
+        y_true = F.one_hot(y_true, num_classes=4).float().to(device)
+
+        # Error from output
+        error_output = self.output - y_true  # Shape: [batch, 4]
+
+        # Gradients for output layer
+        grad_ol_w = error_output.T @ self.hidden / self.x.shape[0]
+        grad_ol_b = error_output.mean(dim=0, keepdim=True)
+
+        # Error propagated to hidden layer
+        d_hidden = error_output @ self.ol_w  # Shape: [batch, hidden]
+        d_hidden[self.hidden <= 0] = 0  # ReLU derivative
+
+        # Gradients for hidden layer
+        grad_hl_w = d_hidden.T @ self.x / self.x.shape[0]
+        grad_hl_b = d_hidden.mean(dim=0, keepdim=True)
+
+        # Apply momentum and update weights
+        self.ol_w_m = momentum * self.ol_w_m - lr * grad_ol_w
+        self.ol_b_m = momentum * self.ol_b_m - lr * grad_ol_b
+        self.hl_w_m = momentum * self.hl_w_m - lr * grad_hl_w
+        self.hl_b_m = momentum * self.hl_b_m - lr * grad_hl_b
+
+        self.ol_w += self.ol_w_m
+        self.ol_b += self.ol_b_m
+        self.hl_w += self.hl_w_m
+        self.hl_b += self.hl_b_m
+
+# Model initialization
+input_size = 3 * 176 * 208 
+hidden_size = 256
+output_size = 4
+model = MLP(input_size, hidden_size, output_size)
+
+# Training loop
+epochs = 5
+for epoch in range(epochs):
+    total_loss = 0
+
+    for images, labels in train_loader:
+        preds = model.forward(images)
+        labels_onehot = F.one_hot(labels, num_classes=output_size).float().to(device)
+        loss = cross_entropy(preds, labels_onehot)
+
+        total_loss += loss.item()
+        model.backward(labels)
+
+    avg_loss = total_loss / len(train_loader)
+    print(f"Epoch {epoch+1}/{epochs}, Loss: {avg_loss:.4f}")
