@@ -71,7 +71,7 @@ class MLP:
         self.output = softmax(logits)
         return self.output
 
-    def backward(self, y_true, lr=0.0001, momentum=0.9):
+    def backward(self, y_true, lr=0.0015, momentum=0.8):
         # Convert labels to one-hot
         y_true = F.one_hot(y_true, num_classes=4).float().to(device)
 
@@ -103,7 +103,7 @@ class MLP:
 
     def train(self):
         #training loop
-        epochs = 75
+        epochs = 100
         total_valid = []
         total_test = []
         for epoch in range(epochs):
@@ -131,7 +131,7 @@ class MLP:
 
         plt.plot(total_valid, label = 'Training')
         plt.plot(total_test, label = 'Test')
-        plt.title(f'Lr: 0.0001 Momentum: 0.9')
+        plt.title(f'Lr: 0.001 Momentum: 0.8')
         plt.legend()
         plt.ylabel('Accuracy (%)')
         plt.xlabel('Epoch')
