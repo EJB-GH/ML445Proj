@@ -1,7 +1,11 @@
 import torch
+import numpy
 import torch.nn.functional as F
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader, random_split
+import matplotlib.pyplot as plt
+import time
+from sklearn.metrics import confusion_matrix, accuracy_score
 
 # Set device
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -67,7 +71,7 @@ class MLP:
         self.output = softmax(logits)
         return self.output
 
-    def backward(self, y_true, lr=0.08, momentum=0.05):
+    def backward(self, y_true, lr=0.0015, momentum=0.8):
         # Convert labels to one-hot
         y_true = F.one_hot(y_true, num_classes=4).float().to(device)
 
@@ -97,24 +101,64 @@ class MLP:
         self.hl_w += self.hl_w_m
         self.hl_b += self.hl_b_m
 
+    def train(self):
+        #training loop
+        epochs = 100
+        total_valid = []
+        total_test = []
+        for epoch in range(epochs):
+            total_loss = 0
+
+            for images, labels in train_loader:
+                preds = self.forward(images)
+                labels_onehot = F.one_hot(labels, num_classes=output_size).float().to(device)
+                loss = cross_entropy(preds, labels_onehot)
+
+                total_loss += loss.item()
+                self.backward(labels)
+
+            val_acc = self.eval(val_loader)
+            test_acc = self.eval(test_loader)
+
+            total_valid.append(val_acc)
+            total_test.append(test_acc)
+
+            avg_loss = total_loss / len(train_loader)
+            print(f"Epoch {epoch+1}/{epochs}, Loss: {avg_loss:.2f} Validation Accuracy: {val_acc:.2f} Test Accuracy: {test_acc:.2f}")
+
+        #confusion = confusion_matrix(test_true, test_pred)
+        #print(confusion)
+
+        plt.plot(total_valid, label = 'Training')
+        plt.plot(total_test, label = 'Test')
+        plt.title(f'Lr: 0.001 Momentum: 0.8')
+        plt.legend()
+        plt.ylabel('Accuracy (%)')
+        plt.xlabel('Epoch')
+        plt.ylim(40,100)
+        plt.show() 
+
+    def eval(self, loader):
+        pred_list = []
+        true_list = []
+       
+        #eval against diff sets
+        for images, labels in loader:
+            preds = self.forward(images)
+            _, pred = torch.max(preds, 1)
+
+            pred_list.extend(pred.cpu().tolist())
+            true_list.extend(labels.cpu().tolist())
+
+        return accuracy_score(true_list, pred_list) * 100  
+
+
+
 # Model initialization
 input_size = 3 * 176 * 208 
 hidden_size = 256
 output_size = 4
 model = MLP(input_size, hidden_size, output_size)
 
-# Training loop
-epochs = 5
-for epoch in range(epochs):
-    total_loss = 0
+model.train()
 
-    for images, labels in train_loader:
-        preds = model.forward(images)
-        labels_onehot = F.one_hot(labels, num_classes=output_size).float().to(device)
-        loss = cross_entropy(preds, labels_onehot)
-
-        total_loss += loss.item()
-        model.backward(labels)
-
-    avg_loss = total_loss / len(train_loader)
-    print(f"Epoch {epoch+1}/{epochs}, Loss: {avg_loss:.4f}")
