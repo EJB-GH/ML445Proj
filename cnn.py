@@ -3,6 +3,9 @@ import torch.nn.functional as F
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader, random_split
 import torch.nn as nn
+import matplotlib.pyplot as plt
+import time
+from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 
 # Set device
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -60,67 +63,91 @@ class CNN(nn.Module):
         x = self.fc_layers(x)
         return x
 
+    def train_model(self):
+        criterion = nn.CrossEntropyLoss()
+        optimizer = torch.optim.Adam(self.parameters(), lr=0.001)
+        epochs = 5
+        total_valid = []
+        total_test = []
+
+        # For confusion matrix
+        test_preds = []
+        test_trues = []
+
+        # Training loop
+        for epoch in range(epochs):
+            total_loss = 0
+            self.train()
+
+            for images, labels in train_loader:
+                images, labels = images.to(device), labels.to(device)
+
+                # Forward pass
+                outputs = self(images)
+                loss = criterion(outputs, labels)
+
+                # Backward pass and optimization
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+
+                total_loss += loss.item()
+        
+            # Evaluate models
+            val_acc,_,_ = self.eval_model(val_loader, "Validation")
+            test_acc, test_preds, test_trues = self.eval_model(test_loader, "Test")
+
+            total_valid.append(val_acc)
+            total_test.append(test_acc)
+
+            avg_loss = total_loss / len(train_loader)
+            print(f"Epoch {epoch+1}/{epochs}, Loss: {avg_loss:.4f}, Validation Accuracy: {val_acc:.2f}, Test Accuracy: {test_acc:.2f}")
+
+        # Confusion matrix and plot
+        self.computeConfusionMatrix(test_preds, test_trues) 
+        # CM Notes: The second category (Moderate Dementia) has very few images in the test set. 
+        # Might need to distribute the classes more evenly in the loading sets!
+
+        self.computePlot(total_valid, total_test)
+
+    def eval_model(self, loader, type_loader):
+        self.eval()
+        correct = 0
+        total = 0
+        pred_list = []
+        true_list = []
+
+        with torch.no_grad():
+            for images, labels in loader:
+                images, labels = images.to(device), labels.to(device)
+                outputs = self(images)
+                _, predicted = torch.max(outputs, 1)
+                total += labels.size(0)
+                correct += (predicted == labels).sum().item()
+
+                pred_list.extend(predicted.cpu().tolist())
+                true_list.extend(labels.cpu().tolist())
+
+        accuracy = 100 * correct / total
+        print(f"{type_loader} - correct: {correct}, total: {total}")
+        return accuracy, pred_list, true_list
+    
+    def computeConfusionMatrix(self, true_values, pred_values):
+        cm = confusion_matrix(true_values, pred_values)
+        display_matrix = ConfusionMatrixDisplay(confusion_matrix=cm)
+        display_matrix.plot(cmap='Blues')
+        plt.title("Confusion Matrix")
+        plt.show()
+    
+    def computePlot(self, total_valid, total_test):
+        plt.plot(total_valid, label = 'Validation')
+        plt.plot(total_test, label = 'Test')
+        plt.title("Validation vs Test Accuracy")
+        plt.legend()
+        plt.ylabel('Accuracy (%)')
+        plt.xlabel('Epoch')
+        plt.ylim(40,100)
+        plt.show() 
+
 model = CNN(output_size=4).to(device)
-criterion = nn.CrossEntropyLoss()
-optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-
-# Training loop
-epochs = 5
-for epoch in range(epochs):
-    total_loss = 0
-    model.train()
-
-    for images, labels in train_loader:
-        images, labels = images.to(device), labels.to(device)
-
-        # Forward pass
-        outputs = model(images)
-        loss = criterion(outputs, labels)
-
-        # Backward pass and optimization
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-
-        total_loss += loss.item()
-
-    avg_loss = total_loss / len(train_loader)
-    print(f"Epoch {epoch+1}/{epochs}, Loss: {avg_loss:.4f}")
-
-# Validation Loop - Use to tune hyperparameters
-model.eval()
-correct = 0
-total = 0
-
-with torch.no_grad():
-    for images, labels in val_loader:
-        images, labels = images.to(device), labels.to(device)
-        outputs = model(images)
-        _, predicted = torch.max(outputs, 1)
-        total += labels.size(0)
-        correct += (predicted == labels).sum().item()
-
-accuracy = 100 * correct / total
-print(f"correct: {correct}, total: {total}")
-print(f"\nValidation Accuracy: {accuracy:.2f}%")
-
-
-''' **Evaluate on test set after tuning hyperparameters on validation set**
-
-# Test Loop - final evaluation on test data
-model.eval()
-correct = 0
-total = 0
-
-with torch.no_grad():
-    for images, labels in test_loader:
-        images, labels = images.to(device), labels.to(device)
-        outputs = model(images)
-        _, predicted = torch.max(outputs, 1)
-        total += labels.size(0)
-        correct += (predicted == labels).sum().item()
-
-test_accuracy = 100 * correct / total
-print(f"correct: {correct}, total: {total}")
-print(f"Test Accuracy: {test_accuracy:.2f}%")
-'''
+model.train_model()
