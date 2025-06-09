@@ -66,7 +66,7 @@ class CNN(nn.Module):
     def train_model(self):
         criterion = nn.CrossEntropyLoss()
         optimizer = torch.optim.Adam(self.parameters(), lr=0.001)
-        epochs = 5
+        epochs = 10
         total_valid = []
         total_test = []
 

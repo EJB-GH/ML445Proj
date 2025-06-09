@@ -103,7 +103,7 @@ class MLP:
 
     def train(self):
         #training loop
-        epochs = 100
+        epochs = 10
         total_valid = []
         total_test = []
         for epoch in range(epochs):
