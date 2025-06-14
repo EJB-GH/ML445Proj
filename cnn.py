@@ -52,10 +52,11 @@ class CNN(nn.Module):
         )
 
         self.fc_layers = nn.Sequential(
-            nn.Flatten(),  # Flatten before FC
-            nn.Linear(64 * 16 * 16, 128),
+            nn.Flatten(),
+            nn.Linear(64 * 16 * 16, 128),  
             nn.ReLU(),
-            nn.Linear(128, output_size)  # Output logits
+            nn.Dropout(0.5),
+            nn.Linear(128, output_size)
         )
 
     def forward(self, x):
@@ -65,8 +66,9 @@ class CNN(nn.Module):
 
     def train_model(self):
         criterion = nn.CrossEntropyLoss()
-        optimizer = torch.optim.Adam(self.parameters(), lr=0.001)
-        epochs = 5
+        optimizer = torch.optim.Adam(self.parameters(), lr=0.0008)
+        #optimizer = torch.optim.SGD(self.parameters(), lr=0.01, momentum=0.9, weight_decay=1e-4)
+        epochs = 50
         total_valid = []
         total_test = []
 
@@ -101,13 +103,10 @@ class CNN(nn.Module):
             total_test.append(test_acc)
 
             avg_loss = total_loss / len(train_loader)
-            print(f"Epoch {epoch+1}/{epochs}, Loss: {avg_loss:.4f}, Validation Accuracy: {val_acc:.2f}, Test Accuracy: {test_acc:.2f}")
+            print(f"Epoch {epoch+1}/{epochs}, Loss: {avg_loss:.4f} Validation Accuracy: {val_acc:.2f} Test Accuracy: {test_acc:.2f}")
 
         # Confusion matrix and plot
         self.computeConfusionMatrix(test_preds, test_trues) 
-        # CM Notes: The second category (Moderate Dementia) has very few images in the test set. 
-        # Might need to distribute the classes more evenly in the loading sets!
-
         self.computePlot(total_valid, total_test)
 
     def eval_model(self, loader, type_loader):
